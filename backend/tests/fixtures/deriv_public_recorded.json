@@ -1,0 +1,146 @@
+{
+ "_note": "Recorded verbatim from wss://api.derivws.com/trading/v1/options/ws/public on 2026-11-21 for contract tests. active_symbols truncated to 3 entries.",
+ "active_symbols": {
+  "active_symbols": [
+   {
+    "exchange_is_open": 1,
+    "is_trading_suspended": 0,
+    "market": "synthetic_index",
+    "pip_size": 0.01,
+    "subgroup": "synthetics",
+    "submarket": "random_index",
+    "trade_count": 7962327,
+    "underlying_symbol": "1HZ100V",
+    "underlying_symbol_name": "Volatility 100 (1s) Index",
+    "underlying_symbol_type": "stockindex"
+   },
+   {
+    "exchange_is_open": 1,
+    "is_trading_suspended": 0,
+    "market": "synthetic_index",
+    "pip_size": 0.01,
+    "subgroup": "synthetics",
+    "submarket": "random_index",
+    "trade_count": 4622063,
+    "underlying_symbol": "1HZ10V",
+    "underlying_symbol_name": "Volatility 10 (1s) Index",
+    "underlying_symbol_type": "stockindex"
+   },
+   {
+    "exchange_is_open": 1,
+    "is_trading_suspended": 0,
+    "market": "synthetic_index",
+    "pip_size": 0.001,
+    "subgroup": "synthetics",
+    "submarket": "random_index",
+    "trade_count": 1645302,
+    "underlying_symbol": "1HZ15V",
+    "underlying_symbol_name": "Volatility 15 (1s) Index",
+    "underlying_symbol_type": "stockindex"
+   }
+  ],
+  "echo_req": {
+   "active_symbols": "brief",
+   "req_id": 1
+  },
+  "msg_type": "active_symbols",
+  "req_id": 1
+ },
+ "candles": {
+  "candles": [
+   {
+    "close": 553.94,
+    "epoch": 1795286400,
+    "high": 554.21,
+    "low": 552.13,
+    "open": 552.13
+   },
+   {
+    "close": 552.87,
+    "epoch": 1795286700,
+    "high": 554.6,
+    "low": 552.59,
+    "open": 553.83
+   },
+   {
+    "close": 548.84,
+    "epoch": 1795287000,
+    "high": 553.1,
+    "low": 548.84,
+    "open": 553.05
+   },
+   {
+    "close": 548.36,
+    "epoch": 1795287300,
+    "high": 550.16,
+    "low": 548.03,
+    "open": 549.03
+   },
+   {
+    "close": 549.8,
+    "epoch": 1795287600,
+    "high": 549.98,
+    "low": 547.46,
+    "open": 548.37
+   }
+  ],
+  "echo_req": {
+   "ticks_history": "R_100",
+   "end": "latest",
+   "count": 5,
+   "style": "candles",
+   "granularity": 300,
+   "adjust_start_time": 1,
+   "req_id": 2
+  },
+  "msg_type": "candles",
+  "pip_size": 2.0,
+  "req_id": 2
+ },
+ "error": {
+  "echo_req": {
+   "ticks_history": "NOPE_XX",
+   "end": "latest",
+   "count": 3,
+   "style": "candles",
+   "granularity": 300,
+   "req_id": 3
+  },
+  "error": {
+   "code": "InvalidSymbol",
+   "message": "Invalid symbol."
+  },
+  "msg_type": "ticks_history",
+  "req_id": 3
+ },
+ "time": {
+  "echo_req": {
+   "time": 1,
+   "req_id": 4
+  },
+  "msg_type": "time",
+  "req_id": 4,
+  "time": 1795287800
+ },
+ "tick": {
+  "echo_req": {
+   "ticks": "R_100",
+   "subscribe": 1,
+   "req_id": 5
+  },
+  "msg_type": "tick",
+  "req_id": 5,
+  "subscription": {
+   "id": "5c5b2bd4-ef43-4d78-8535-43dd89092212"
+  },
+  "tick": {
+   "ask": 549.9,
+   "bid": 549.7,
+   "epoch": 1795287800,
+   "id": "5c5b2bd4-ef43-4d78-8535-43dd89092212",
+   "pip_size": 2,
+   "quote": 549.8,
+   "symbol": "R_100"
+  }
+ }
+}
