@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, getToken, setToken, type Status } from "../api";
-import { ErrorLine, ProvBadge, useApi } from "../common";
+import { ErrorLine, Help, PageHead, ProvBadge, timeAgo, useApi } from "../common";
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -8,19 +8,19 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
-const EDITABLE: [string, string][] = [
-  ["risk_per_trade_pct", "Risk per trade (% of paper equity)"],
-  ["max_daily_loss_pct", "Max daily loss %"],
-  ["max_open_positions", "Max open positions"],
-  ["max_total_open_risk_pct", "Max total open risk %"],
-  ["loss_streak_reduce", "Halve risk after N losses"],
-  ["loss_streak_pause", "Pause after N losses"],
-  ["min_reward_risk", "Min reward/risk"],
+const RISK_FIELDS: [string, string, string][] = [
+  ["risk_per_trade_pct", "Risk per trade (%)", "Share of the paper balance a single idea may lose if its stop is hit."],
+  ["max_daily_loss_pct", "Daily loss limit (%)", "After losing this much in a day, new ideas are blocked until tomorrow."],
+  ["max_open_positions", "Max open ideas", "How many paper positions can be open at once."],
+  ["min_reward_risk", "Min reward ÷ risk", "Ideas whose target is not at least this many times the risk are skipped."],
 ];
-const FLAGS: [string, string][] = [
-  ["research_only_alerts", "Send research-only alerts (risk unavailable / not eligible / simulated)"],
-  ["require_eligibility", "Require out-of-sample eligibility for paper alerts"],
-];
+
+type Instrument = {
+  symbol: string;
+  market: string;
+  adapter: { product_type: string; confirmed: boolean } | null;
+  fundamentals: { status: string };
+};
 
 export default function Settings({ status, reloadStatus }: { status: Status | null; reloadStatus: () => void }) {
   const [tok, setTok] = useState(getToken());
@@ -28,52 +28,54 @@ export default function Settings({ status, reloadStatus }: { status: Status | nu
   const [err, setErr] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const audit = useApi<{ chain: { ok: boolean; entries: number } }>("/api/audit?limit=1");
-  const instruments = useApi<{ symbol: string; market: string; adapter: { product_type: string; confirmed: boolean; backtestable: boolean } | null; fundamentals: { status: string; reason?: string } }[]>("/api/instruments");
+  const instruments = useApi<Instrument[]>("/api/instruments");
   const risk = status?.risk ?? {};
+  const killed = Boolean(risk.kill_switch);
 
-  async function saveRisk() {
+  const done = (m: string) => {
     setErr(null);
-    const changes: Record<string, number | boolean> = {};
-    for (const [k, v] of Object.entries(draft)) if (v !== "") changes[k] = Number(v);
+    setMsg(m);
+    reloadStatus();
+  };
+  async function saveRisk() {
+    const changes: Record<string, number> = {};
+    for (const [k, v] of Object.entries(draft)) if (v.trim() !== "") changes[k] = Number(v);
     try {
       await api("/api/risk/config", { method: "PUT", body: JSON.stringify({ changes }) });
       setDraft({});
-      setMsg("Risk settings saved (audited).");
-      reloadStatus();
+      done("Risk limits saved.");
     } catch (e) {
       setErr((e as Error).message);
     }
   }
-  async function toggle(key: string, value: boolean) {
-    setErr(null);
+  async function setFlag(key: string, value: boolean) {
     try {
       if (key === "kill_switch") await api(`/api/risk/kill-switch?engaged=${value}`, { method: "POST" });
       else await api("/api/risk/config", { method: "PUT", body: JSON.stringify({ changes: { [key]: value } }) });
-      reloadStatus();
+      done("Saved.");
     } catch (e) {
       setErr((e as Error).message);
     }
   }
   async function testNotify() {
     try {
-      setMsg(JSON.stringify(await api("/api/notifications/test", { method: "POST" })));
+      const r = await api<Record<string, string>>("/api/notifications/test", { method: "POST" });
+      done(Object.entries(r).map(([k, v]) => `${k === "webpush" ? "Phone push" : "Telegram"}: ${v}`).join(" · "));
     } catch (e) {
       setErr((e as Error).message);
     }
   }
   async function enablePush() {
-    setErr(null);
     try {
-      if (!("serviceWorker" in navigator) || !("PushManager" in window)) throw new Error("Web Push is not supported in this browser");
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) throw new Error("This browser can’t receive push notifications. On iPhone, first add the app to your Home Screen.");
       const { key } = await api<{ key: string | null }>("/api/push/vapid-public-key");
-      if (!key) throw new Error("Server has no VAPID key configured");
-      const perm = await Notification.requestPermission();
-      if (perm !== "granted") throw new Error("Notification permission denied");
+      if (!key) throw new Error("Push isn’t set up on the server yet (VAPID keys missing).");
+      if ((await Notification.requestPermission()) !== "granted") throw new Error("Notifications were not allowed.");
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(key) as BufferSource });
       const j = sub.toJSON();
       await api("/api/push/subscribe", { method: "POST", body: JSON.stringify({ endpoint: j.endpoint, keys: j.keys }) });
-      setMsg("Push notifications enabled on this device.");
+      done("This phone will now get alerts.");
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -81,84 +83,94 @@ export default function Settings({ status, reloadStatus }: { status: Status | nu
 
   return (
     <section className="stack">
-      <h2>Settings &amp; status</h2>
+      <PageHead title="Settings" lead="Alerts, safety limits and connection." />
+      {msg && <div className="note info">{msg}</div>}
+      <ErrorLine error={err} />
+
+      {/* ---- emergency stop ---- */}
+      <div className={`card hero`}>
+        <div style={{ flex: 1 }}>
+          <b>{killed ? "Kill switch is ON" : "Emergency stop"}</b>
+          <span className="small muted">{killed ? "All new signals are blocked." : "Instantly block all new signals and alerts."}</span>
+        </div>
+        <button className={`btn ${killed ? "ghost" : "danger"}`} onClick={() => setFlag("kill_switch", !killed)}>{killed ? "Turn off" : "Stop all"}</button>
+      </div>
+
+      {/* ---- notifications ---- */}
+      <h3 className="section">Phone alerts</h3>
+      <div className="list">
+        <div className="row between">
+          <div><b>Push notifications</b><div className="small muted">{status?.notifications.webpush ? "Ready — enable on each phone" : "Not set up on the server"}</div></div>
+          <button className="btn ghost" onClick={enablePush}>Enable here</button>
+        </div>
+        <div className="row between">
+          <div><b>Telegram</b><div className="small muted">{status?.notifications.telegram ? "Connected" : "Not connected (set bot token and chat ID on the server)"}</div></div>
+        </div>
+        <div className="row between">
+          <div className="small muted">Check that alerts reach you</div>
+          <button className="btn ghost" onClick={testNotify}>Send test</button>
+        </div>
+      </div>
+
+      {/* ---- risk ---- */}
+      <h3 className="section">Safety limits</h3>
       <div className="card stack">
-        <h3>Access</h3>
-        <label className="field">App access token (APP_ACCESS_TOKEN — stored only on this device)
+        <div className="form-grid">
+          {RISK_FIELDS.map(([k, label, help]) => (
+            <label className="field" key={k}>
+              <span>{label} <Help text={help} /></span>
+              <input inputMode="decimal" value={draft[k] ?? ""} placeholder={String(risk[k] ?? "")} onChange={(e) => setDraft({ ...draft, [k]: e.target.value })} />
+            </label>
+          ))}
+        </div>
+        <button className="btn" onClick={saveRisk} disabled={Object.values(draft).every((v) => v.trim() === "")}>Save limits</button>
+        <p className="tiny faint" style={{ margin: 0 }}>
+          Never more than {String(risk.hard_max_risk_pct ?? 2)}% per trade. After {String(risk.loss_streak_reduce)} losses in a row risk is halved; after {String(risk.loss_streak_pause)} new ideas pause for a day. Risk is never increased to “win it back”.
+        </p>
+        <label className="switch">
+          <input type="checkbox" checked={Boolean(risk.require_eligibility)} onChange={(e) => setFlag("require_eligibility", e.target.checked)} />
+          <span><b>Only alert on tested strategies</b><br /><span className="small muted">A strategy must pass a full test in Research for that market before it can send paper alerts.</span></span>
+        </label>
+        <label className="switch">
+          <input type="checkbox" checked={Boolean(risk.research_only_alerts)} onChange={(e) => setFlag("research_only_alerts", e.target.checked)} />
+          <span><b>Also send research-only alerts</b><br /><span className="small muted">Includes untested strategies, simulated data and products where risk can’t be calculated. Clearly labelled.</span></span>
+        </label>
+      </div>
+
+      {/* ---- markets ---- */}
+      <h3 className="section">Markets &amp; products</h3>
+      <div className="list">
+        {instruments.data?.map((i) => (
+          <div key={i.symbol} className="row between">
+            <div>
+              <b>{i.symbol}</b>
+              <div className="small muted">{i.adapter ? i.adapter.product_type : "no product set"} · fundamentals {i.fundamentals.status.toLowerCase().replace(/_/g, " ")}</div>
+            </div>
+            {i.adapter?.confirmed ? <span className="pill long">Ready</span> : <span className="pill warn">Needs product details</span>}
+          </div>
+        ))}
+      </div>
+      <p className="tiny faint" style={{ margin: 0 }}>“Needs product details” means contract size and fees haven’t been confirmed, so risk can’t be calculated and alerts stay research-only. See the README to set them.</p>
+
+      {/* ---- system ---- */}
+      <h3 className="section">System</h3>
+      {status && (
+        <div className="list">
+          <div className="row between"><span>Data source</span><ProvBadge p={status.provenance} /></div>
+          <div className="row between"><span>Database</span><span className={status.database ? "ok" : "bad"}>{status.database ? "OK" : "Down"}</span></div>
+          <div className="row between"><span>Background scanner</span><span className="small">{status.worker_heartbeat ? `alive (${timeAgo(JSON.parse(status.worker_heartbeat).ts)})` : <span className="warn-t">not running</span>}</span></div>
+          <div className="row between"><span>Audit log <Help text="Every signal, setting change and test is recorded in a tamper-evident log." /></span><span className={audit.data?.chain.ok ? "ok" : "bad"}>{audit.data ? (audit.data.chain.ok ? `Intact · ${audit.data.chain.entries} entries` : "BROKEN") : "…"}</span></div>
+          <div className="row between"><span>Version</span><span className="small muted">{status.code_version}</span></div>
+        </div>
+      )}
+
+      <h3 className="section">Access</h3>
+      <div className="card stack-sm">
+        <label className="field">Access token <small>Stored only on this device.</small>
           <input type="password" value={tok} onChange={(e) => setTok(e.target.value)} autoComplete="off" />
         </label>
-        <div><button className="btn" onClick={() => { setToken(tok); reloadStatus(); setMsg("Token saved on this device."); }}>Save token</button></div>
+        <button className="btn ghost" onClick={() => { setToken(tok); done("Token saved."); }}>Save token</button>
       </div>
-
-      {status && (
-        <div className="card stack">
-          <h3>System</h3>
-          <div className="row"><ProvBadge p={status.provenance} /> <span className="small">{status.mode}</span></div>
-          <div className="small">
-            Provider <b>{String(status.provider.provider)}</b> · DB {status.database ? <span className="ok">ok</span> : <span className="bad">down</span>} · Redis{" "}
-            {status.redis === null ? "not configured" : status.redis ? <span className="ok">ok</span> : <span className="bad">down</span>} · active signals {status.active_signals}
-          </div>
-          <div className="small muted">Worker heartbeat: {status.worker_heartbeat ?? "none (worker not running?)"}</div>
-          <div className="small muted">Last scan: {status.last_scan ?? "—"}</div>
-          <div className="small muted">Audit chain: {audit.data ? (audit.data.chain.ok ? `intact (${audit.data.chain.entries} entries)` : "BROKEN") : "…"}</div>
-          <div className="small muted">Version {status.code_version}</div>
-        </div>
-      )}
-
-      {status && (
-        <div className="card stack">
-          <h3>Risk engine</h3>
-          <div className="row">
-            <button className={`btn ${risk.kill_switch ? "secondary" : "danger"}`} onClick={() => toggle("kill_switch", !risk.kill_switch)}>
-              {risk.kill_switch ? "Release kill switch" : "Engage kill switch"}
-            </button>
-            {risk.kill_switch && <span className="bad small">All new signals are blocked.</span>}
-          </div>
-          <div className="grid">
-            {EDITABLE.map(([k, label]) => (
-              <label className="field" key={k}>{label} (now {String(risk[k])})
-                <input inputMode="decimal" value={draft[k] ?? ""} placeholder={String(risk[k])} onChange={(e) => setDraft({ ...draft, [k]: e.target.value })} />
-              </label>
-            ))}
-          </div>
-          <div><button className="btn" onClick={saveRisk} disabled={Object.keys(draft).length === 0}>Save risk settings</button></div>
-          {FLAGS.map(([k, label]) => (
-            <label key={k} className="row small"><input type="checkbox" checked={Boolean(risk[k])} onChange={(e) => toggle(k, e.target.checked)} style={{ minHeight: 0 }} /> {label}</label>
-          ))}
-          <p className="small muted">Hard cap {String(risk.hard_max_risk_pct)}% per trade. Risk never increases after losses (no martingale, averaging down or grids).</p>
-        </div>
-      )}
-
-      <div className="card stack">
-        <h3>Notifications</h3>
-        <div className="small">Telegram: {status?.notifications.telegram ? <span className="ok">configured</span> : "not configured (set TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID on the server)"}</div>
-        <div className="small">Web Push: {status?.notifications.webpush ? <span className="ok">server configured</span> : "server VAPID keys not set"}</div>
-        <div className="row">
-          <button className="btn secondary" onClick={enablePush}>Enable push on this device</button>
-          <button className="btn secondary" onClick={testNotify}>Send test</button>
-        </div>
-      </div>
-
-      <div className="card stack">
-        <h3>Instruments &amp; product adapters</h3>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Symbol</th><th>Market</th><th>Product</th><th>Spec</th><th>Fundamentals</th></tr></thead>
-            <tbody>
-              {instruments.data?.map((i) => (
-                <tr key={i.symbol}>
-                  <td>{i.symbol}</td><td>{i.market}</td><td>{i.adapter?.product_type ?? "none"}</td>
-                  <td>{i.adapter?.confirmed ? <span className="ok">confirmed</span> : <span className="warn">unconfirmed → RISK_UNAVAILABLE</span>}</td>
-                  <td className="muted">{i.fundamentals.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="small muted">Set a verified product spec with <span className="mono">PUT /api/instruments/&lt;symbol&gt;</span> (see README).</p>
-      </div>
-      {msg && <p className="small">{msg}</p>}
-      <ErrorLine error={err} />
     </section>
   );
 }

@@ -25,7 +25,7 @@ change and backtest is recorded in a hash-chained audit log.
 | Fundamentals / events | `backend/app/fundamentals/service.py` | Point-in-time calendar (`known_at`). Synthetic indices: `NOT_APPLICABLE` |
 | Alerts | `backend/app/notifications/dispatcher.py` | Telegram and Web Push; gated by risk; each (signal, event, channel) sent at most once |
 | API / worker | `backend/app/api/main.py`, `backend/app/worker.py` | FastAPI with bearer auth; the scheduler scans a few seconds after each bar closes |
-| PWA | `frontend/` | React, TypeScript, Vite and Lightweight Charts; installable; Signals / Scanner / Chart / Backtests / Settings |
+| PWA | `frontend/` | React, TypeScript, Vite and Lightweight Charts; installable; five plain-language screens (see below) |
 
 ## Deriv integration: what was verified
 
@@ -107,6 +107,20 @@ curl -X PUT -H "Authorization: Bearer $APP_ACCESS_TOKEN" -H 'Content-Type: appli
 ```
 
 **Score.** The `score` field is an ordinal strength used for ranking. It is **not** a probability.
+
+## Using the app
+
+The app has five tabs:
+
+| Tab | What it's for |
+|---|---|
+| **Today** | Is the scanner running? How many ideas are open? A big **Scan now** button. Plus a short "How this app works" guide. |
+| **Signals** | Buy and sell ideas, filterable by status (Open, Target reached, Stopped out, Cancelled, Expired, Blocked). Tap an idea to see the price, stop and target, the reasons behind it, and its safety checks. The technical details are tucked away below. |
+| **Markets** | Your watchlist, with one line per market saying what the strategies see. Tap a market for its chart and each strategy's reading. |
+| **Research** | Test a strategy on past prices. A **Full test** produces a clear verdict, Passed or Not passed, and passing is what unlocks paper alerts for that market. |
+| **Settings** | The emergency stop, phone alerts, safety limits, product details for each market, system health, and the access token. |
+
+Every screen shows whether the data is live, delayed or simulated. The first time you open the app it asks for the access token.
 
 ## Running it
 

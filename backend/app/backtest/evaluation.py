@@ -245,22 +245,22 @@ def evaluate_strategy(
 
     net = m["net"]
     checks = [
-        (n >= criteria.min_test_trades, f"test trades {n} >= {criteria.min_test_trades}"),
+        (n >= criteria.min_test_trades, f"Enough trades to judge: {n} (needs at least {criteria.min_test_trades})"),
         (
             (net["expectancy_r"] or -1) >= criteria.min_test_expectancy_r,
-            f"test net expectancy {_fmt(net['expectancy_r'])} R >= {criteria.min_test_expectancy_r}",
+            f"Average per trade after costs: {_fmt(net['expectancy_r'])} R (needs {criteria.min_test_expectancy_r} R)",
         ),
         (
             (net["profit_factor"] or 0) >= criteria.min_test_profit_factor,
-            f"test profit factor {_fmt(net['profit_factor'])} >= {criteria.min_test_profit_factor}",
+            f"Profit factor (gains ÷ losses): {_fmt(net['profit_factor'])} (needs at least {criteria.min_test_profit_factor})",
         ),
         (
             net["max_drawdown_pct"] <= criteria.max_test_drawdown_pct,
-            f"test max drawdown {net['max_drawdown_pct']:.1f}% <= {criteria.max_test_drawdown_pct}%",
+            f"Worst drop from peak: {net['max_drawdown_pct']:.1f}% (must stay under {criteria.max_test_drawdown_pct:.0f}%)",
         ),
         (
             counted > 0 and positive / counted >= criteria.min_positive_fold_ratio,
-            f"positive walk-forward folds {positive}/{counted} >= {criteria.min_positive_fold_ratio:.0%}",
+            f"Profitable in {positive} of {counted} earlier test periods (needs {criteria.min_positive_fold_ratio:.0%})",
         ),
     ]
     rb = report.benchmarks["random_entry"]
@@ -268,7 +268,7 @@ def evaluate_strategy(
         checks.append(
             (
                 (net["expectancy_r"] or -1) > rb["p95_expectancy_r"],
-                f"beats 95th pct of random-entry benchmark ({rb['p95_expectancy_r']:.3f} R)",
+                f"Better than random entries (must beat {rb['p95_expectancy_r']:.3f} R, the top 5% of random results)",
             )
         )
     report.eligible = all(ok for ok, _ in checks)

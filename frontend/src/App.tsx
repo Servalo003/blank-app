@@ -1,59 +1,96 @@
 import { useEffect, useState } from "react";
-import type { Status, Watchlist } from "./api";
-import { Disclaimer, ErrorLine, ProvBadge, useApi } from "./common";
-import Backtests from "./pages/Backtests";
-import ChartView from "./pages/ChartView";
-import Scanner from "./pages/Scanner";
+import { setToken, type Signal, type Status, type Watchlist } from "./api";
+import { Footer, Icon, ProvBadge, useApi } from "./common";
+import Home from "./pages/Home";
+import Markets from "./pages/Markets";
+import Research from "./pages/Research";
 import Settings from "./pages/Settings";
 import Signals from "./pages/Signals";
 
-const TABS = ["signals", "scanner", "chart", "backtests", "settings"] as const;
-type Tab = (typeof TABS)[number];
+const TABS = [
+  { id: "home", label: "Today", icon: "home" },
+  { id: "signals", label: "Signals", icon: "bell" },
+  { id: "markets", label: "Markets", icon: "markets" },
+  { id: "research", label: "Research", icon: "flask" },
+  { id: "settings", label: "Settings", icon: "gear" },
+] as const;
+type Tab = (typeof TABS)[number]["id"];
 
 function parseHash(): { tab: Tab; id: string | null } {
   const [, tab, id] = window.location.hash.split("/");
-  return { tab: (TABS as readonly string[]).includes(tab) ? (tab as Tab) : "signals", id: id ?? null };
+  const known = TABS.some((t) => t.id === tab);
+  return { tab: known ? (tab as Tab) : "home", id: id ?? null };
+}
+
+function Welcome({ onSaved }: { onSaved: () => void }) {
+  const [tok, setTok] = useState("");
+  return (
+    <main className="stack" style={{ paddingTop: 48 }}>
+      <div className="center">
+        <img src="/icon.svg" alt="" width={64} height={64} style={{ borderRadius: 16 }} />
+        <h1 className="page" style={{ marginTop: 12 }}>Deriv Signal Lab</h1>
+        <p className="lead">Research and paper-trading alerts. Nothing is ever traded for you.</p>
+      </div>
+      <form className="card stack" onSubmit={(e) => { e.preventDefault(); setToken(tok.trim()); onSaved(); }}>
+        <label className="field">Access token
+          <input type="password" value={tok} onChange={(e) => setTok(e.target.value)} autoFocus autoComplete="off" placeholder="Paste the APP_ACCESS_TOKEN from your server" />
+          <small>Saved only on this device. Ask whoever runs the server if you don’t have it.</small>
+        </label>
+        <button className="btn block" type="submit" disabled={!tok.trim()}>Continue</button>
+      </form>
+      <Footer />
+    </main>
+  );
 }
 
 export default function App() {
   const [{ tab, id }, setRoute] = useState(parseHash());
   useEffect(() => {
-    const on = () => setRoute(parseHash());
+    const on = () => {
+      setRoute(parseHash());
+      window.scrollTo(0, 0);
+    };
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
-  const go = (t: Tab, sid: string | null = null) => {
+  const go = (t: string, sid: string | null = null) => {
     window.location.hash = sid ? `/${t}/${sid}` : `/${t}`;
   };
   const status = useApi<Status>("/api/status", 30000);
   const wls = useApi<Watchlist[]>("/api/watchlists");
+  const open = useApi<Signal[]>("/api/signals?status=ACTIVE&limit=50", 30000);
   const symbols = [...new Set((wls.data ?? []).flatMap((w) => w.items.map((i) => i.symbol)))];
-  const unauth = status.error?.includes("access token");
+
+  if (status.error?.includes("access token")) {
+    return <Welcome onSaved={() => { status.reload(); wls.reload(); open.reload(); }} />;
+  }
+  const openCount = open.data?.length ?? 0;
 
   return (
     <>
       <header className="top">
-        <h1>Deriv Signal Lab</h1>
+        <div className="brand"><img src="/icon.svg" alt="" /> Signal Lab</div>
         <div className="spacer" />
+        {status.data?.risk.kill_switch && <span className="pill short">Paused</span>}
         {status.data && <ProvBadge p={status.data.provenance} />}
-        {status.data?.risk.kill_switch && <span className="badge bad">KILL SWITCH</span>}
       </header>
-      <nav className="tabs" aria-label="Sections">
+      <nav className="tabs" aria-label="Main">
         {TABS.map((t) => (
-          <button key={t} aria-current={tab === t ? "page" : undefined} onClick={() => go(t)}>
-            {t[0].toUpperCase() + t.slice(1)}
+          <button key={t.id} aria-current={tab === t.id ? "page" : undefined} onClick={() => go(t.id)}>
+            <Icon name={t.icon} />
+            {t.id === "signals" && openCount > 0 && <span className="dot">{openCount}</span>}
+            {t.label}
           </button>
         ))}
       </nav>
-      <main className="stack">
-        <Disclaimer />
-        {unauth && tab !== "settings" && <p className="error">Enter your access token under Settings.</p>}
-        {!unauth && <ErrorLine error={status.error} />}
+      <main className={`stack ${tab === "signals" || tab === "research" ? "wide" : ""}`}>
+        {status.error && <p className="error">Can’t reach the server: {status.error}</p>}
+        {tab === "home" && <Home status={status.data} goSignal={(sid) => go("signals", sid)} goTab={go} />}
         {tab === "signals" && <Signals openId={id} setOpenId={(sid) => go("signals", sid)} />}
-        {tab === "scanner" && <Scanner />}
-        {tab === "chart" && <ChartView symbols={symbols} />}
-        {tab === "backtests" && <Backtests symbols={symbols} />}
+        {tab === "markets" && <Markets />}
+        {tab === "research" && <Research symbols={symbols} />}
         {tab === "settings" && <Settings status={status.data} reloadStatus={status.reload} />}
+        <Footer />
       </main>
     </>
   );
