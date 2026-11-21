@@ -1,96 +1,152 @@
 import { useState } from "react";
 import { fmtNum, fmtPrice, fmtTs, type Signal } from "../api";
-import { DirBadge, ErrorLine, ProvBadge, useApi } from "../common";
+import {
+  ALERT_LABEL,
+  Back,
+  DIR_LABEL,
+  DirIcon,
+  Empty,
+  ErrorLine,
+  Help,
+  PageHead,
+  ProvBadge,
+  STATUS_LABEL,
+  TREND_LABEL,
+  VOL_LABEL,
+  strategyName,
+  timeAgo,
+  useApi,
+} from "../common";
 
-const STATUS_FILTERS = ["", "ACTIVE", "SUPPRESSED", "TARGET_HIT", "STOP_HIT", "INVALIDATED", "EXPIRED"];
+const FILTERS: [string, string][] = [
+  ["ACTIVE", "Open"],
+  ["", "All"],
+  ["TARGET_HIT", "Target reached"],
+  ["STOP_HIT", "Stopped out"],
+  ["INVALIDATED", "Cancelled"],
+  ["EXPIRED", "Expired"],
+  ["SUPPRESSED", "Blocked"],
+];
+
+function statusTone(s: string): string {
+  if (s === "TARGET_HIT") return "long";
+  if (s === "STOP_HIT" || s === "SUPPRESSED") return "short";
+  if (s === "ACTIVE") return "accent";
+  return "";
+}
+
+export function Plan({ s }: { s: Signal }) {
+  return (
+    <div className="plan">
+      <div><span>Price at signal</span><b>{fmtPrice(s.entry_ref)}</b></div>
+      <div className="stop"><span>Stop</span><b>{fmtPrice(s.stop)}</b></div>
+      <div className="target"><span>Target</span><b>{fmtPrice(s.target)}</b></div>
+    </div>
+  );
+}
 
 export function SignalCard({ s, onOpen }: { s: Signal; onOpen: (id: string) => void }) {
   return (
-    <article className="card">
-      <div className="row between">
-        <div className="row">
-          <DirBadge d={s.direction} />
-          <b>{s.symbol}</b>
-          <span className="muted small">{s.timeframe}</span>
+    <article className="card tap" onClick={() => onOpen(s.id)} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && onOpen(s.id)}>
+      <div className="sig-head">
+        <DirIcon d={s.direction} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="sig-title">{DIR_LABEL[s.direction]} · {s.symbol}</div>
+          <div className="small muted">{strategyName(s.strategy)} · {s.timeframe} chart · {timeAgo(s.signal_ts)}</div>
         </div>
+        <span className={`pill ${statusTone(s.status)}`}>{STATUS_LABEL[s.status] ?? s.status}</span>
+      </div>
+      <Plan s={s} />
+      <ul className="why">{s.reasons.slice(0, 2).map((r, i) => <li key={i}>{r}</li>)}</ul>
+      <div className="row between" style={{ marginTop: 10 }}>
         <ProvBadge p={s.provenance} />
+        {s.outcome_r !== null ? (
+          <span className={`small ${s.outcome_r >= 0 ? "ok" : "bad"}`}><b>{s.outcome_r >= 0 ? "+" : ""}{fmtNum(s.outcome_r)} R</b> paper result</span>
+        ) : (
+          <span className="small muted">{ALERT_LABEL[s.alert_level] ?? s.alert_level}</span>
+        )}
       </div>
-      <div className="small muted" style={{ marginTop: 6 }}>
-        {s.strategy} · {s.status} · {s.alert_level === "ACTIONABLE" ? "paper alert" : s.alert_level.toLowerCase().replace("_", " ")} · risk{" "}
-        <span className={s.risk_status === "APPROVED" ? "ok" : "warn"}>{s.risk_status}</span>
-      </div>
-      <div className="levels num">
-        <div><span>Ref</span>{fmtPrice(s.entry_ref)}</div>
-        <div><span>Stop</span>{fmtPrice(s.stop)}</div>
-        <div><span>Target</span>{fmtPrice(s.target)}</div>
-      </div>
-      <div className="small muted">Bar closed {fmtTs(s.signal_ts)} · strength {fmtNum(s.score)}</div>
-      <ul className="reasons small">{s.reasons.slice(0, 3).map((r, i) => <li key={i}>{r}</li>)}</ul>
-      {s.outcome_r !== null && <div className="small">Paper outcome: <b className={s.outcome_r >= 0 ? "ok" : "bad"}>{fmtNum(s.outcome_r)} R</b></div>}
-      <button className="btn secondary" style={{ marginTop: 8 }} onClick={() => onOpen(s.id)}>Details</button>
     </article>
   );
 }
 
 export function SignalDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const { data: s, error } = useApi<Signal>(`/api/signals/${id}`);
+  const failed = s?.risk?.checks.filter((c) => !c.passed) ?? [];
   return (
-    <div className="card stack">
-      <div className="row between">
-        <h2>Signal detail</h2>
-        <button className="btn secondary" onClick={onClose}>Close</button>
-      </div>
+    <section className="stack">
+      <Back onClick={onClose} label="All signals" />
       <ErrorLine error={error} />
       {s && (
         <>
-          <div className="row">
-            <DirBadge d={s.direction} /> <b>{s.symbol}</b> {s.timeframe} <ProvBadge p={s.provenance} />
-          </div>
-          <div className="small muted">{s.strategy} · status {s.status}{s.close_reason ? ` (${s.close_reason})` : ""}</div>
-          <div className="levels num">
-            <div><span>Ref (signal close)</span>{fmtPrice(s.entry_ref)}</div>
-            <div><span>Stop</span>{fmtPrice(s.stop)}</div>
-            <div><span>Target</span>{fmtPrice(s.target)}</div>
-            <div><span>Invalidation</span>{fmtPrice(s.invalidation)}</div>
-            <div><span>Entry window until</span>{fmtTs(s.entry_window_until).slice(5)}</div>
-            <div><span>Expires</span>{fmtTs(s.expires_at).slice(5)}</div>
-          </div>
-          <h3>Why</h3>
-          <ul className="reasons small">{s.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
-          <h3>Risk engine</h3>
-          <div className="small">
-            {s.risk_status} · alert level {s.alert_level}
-            {s.risk && s.risk_status === "APPROVED" && <> · est. risk {fmtNum(s.risk.risk_amount)} ({fmtNum(s.risk.risk_pct)}% of paper equity)</>}
-          </div>
-          <div className="table-wrap">
-            <table>
-              <tbody>
-                {s.risk?.checks.map((c) => (
-                  <tr key={c.name}><td>{c.passed ? <span className="ok">✓</span> : <span className="bad">✗</span>}</td><td>{c.name}</td><td className="muted">{c.detail}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <h3>Regime &amp; fundamentals</h3>
-          <div className="small">Trend {s.regime.trend} · volatility {s.regime.volatility}</div>
-          <div className="small muted">Fundamentals: {String(s.fundamentals?.status ?? "—")} — {String(s.fundamentals?.reason ?? s.fundamentals?.block ?? "")}</div>
-          <h3>Indicators at signal bar</h3>
-          <div className="table-wrap">
-            <table><tbody>{Object.entries(s.indicators ?? {}).map(([k, v]) => <tr key={k}><td>{k}</td><td className="num">{typeof v === "number" ? fmtPrice(v) : String(v)}</td></tr>)}</tbody></table>
-          </div>
-          <h3>Lifecycle &amp; alerts</h3>
-          <ul className="reasons small">{s.events?.map((e, i) => <li key={i}>{e.ts.slice(0, 16)} {e.kind} {e.detail}</li>)}</ul>
-          <ul className="reasons small">{s.deliveries?.map((d, i) => <li key={i}>{d.event} → {d.channel}: {d.status}{d.error ? ` (${d.error})` : ""}</li>)}</ul>
-          <details>
-            <summary>Audit fingerprints</summary>
-            <div className="small mono" style={{ wordBreak: "break-all" }}>
-              params {s.params_hash}<br />dataset {s.dataset_hash}<br />risk config {s.risk_config_hash}<br />code {s.code_version}
+          <div className="card">
+            <div className="sig-head">
+              <DirIcon d={s.direction} />
+              <div style={{ flex: 1 }}>
+                <div className="sig-title">{DIR_LABEL[s.direction]} · {s.symbol}</div>
+                <div className="small muted">{strategyName(s.strategy)} · {s.timeframe} chart</div>
+              </div>
+              <span className={`pill ${statusTone(s.status)}`}>{STATUS_LABEL[s.status] ?? s.status}</span>
             </div>
-            <pre className="small mono" style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(s.params, null, 1)}</pre>
+            <Plan s={s} />
+            <div className="small muted" style={{ marginTop: 10 }}>
+              Signal at {fmtTs(s.signal_ts)} ({timeAgo(s.signal_ts)}).{" "}
+              {s.status === "ACTIVE" && <>Idea is cancelled if price closes beyond <b>{fmtPrice(s.invalidation)}</b> before {fmtTs(s.entry_window_until).slice(11)}. </>}
+              {s.close_reason && <>Closed: {s.close_reason}.</>}
+            </div>
+            {s.outcome_r !== null && (
+              <p className={s.outcome_r >= 0 ? "ok" : "bad"} style={{ margin: "8px 0 0" }}>
+                <b>Paper result: {s.outcome_r >= 0 ? "+" : ""}{fmtNum(s.outcome_r)} R</b>{" "}
+                <Help text="R = the amount risked. +2 R means the move gained twice what was at risk; −1 R means the stop was hit." />
+              </p>
+            )}
+          </div>
+
+          <h3 className="section">Why this signal</h3>
+          <div className="card">
+            <ul className="why" style={{ marginTop: 0 }}>{s.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+            <p className="small muted" style={{ marginBottom: 0 }}>
+              Market: {TREND_LABEL[s.regime.trend] ?? s.regime.trend}, {VOL_LABEL[s.regime.volatility] ?? s.regime.volatility}. Strength{" "}
+              {fmtNum(s.score)} <Help text="A 0–1 ranking of how strongly the rules were met. It is not a probability of success." />
+            </p>
+          </div>
+
+          <h3 className="section">Safety checks</h3>
+          <div className="card stack-sm">
+            <div className="row between">
+              <span>{s.risk_status === "APPROVED" ? <span className="ok">✓ Passed risk rules</span> : s.risk_status === "RISK_UNAVAILABLE" ? <span className="warn-t">Risk can’t be calculated for this product</span> : <span className="bad">✕ Blocked by risk rules</span>}</span>
+              <ProvBadge p={s.provenance} />
+            </div>
+            {s.risk && s.risk_status === "APPROVED" && (
+              <div className="small muted">Suggested paper risk: {fmtNum(s.risk.risk_amount)} ({fmtNum(s.risk.risk_pct)}% of paper balance)</div>
+            )}
+            <div className="small">{ALERT_LABEL[s.alert_level] ?? s.alert_level}</div>
+            {failed.length > 0 && <ul className="why checks">{failed.map((c) => <li key={c.name} className="fail">{c.detail}</li>)}</ul>}
+            <details>
+              <summary>All {s.risk?.checks.length ?? 0} checks</summary>
+              <ul className="why checks">{s.risk?.checks.map((c) => <li key={c.name} className={c.passed ? "" : "fail"}><b>{c.name.replace(/_/g, " ")}</b> — {c.detail}</li>)}</ul>
+            </details>
+          </div>
+
+          <details className="card">
+            <summary>Technical details</summary>
+            <h3 className="section">Indicators on the signal bar</h3>
+            <div className="table-wrap">
+              <table className="kv"><tbody>{Object.entries(s.indicators ?? {}).map(([k, v]) => <tr key={k}><td>{k}</td><td className="num">{typeof v === "number" ? fmtPrice(v) : String(v)}</td></tr>)}</tbody></table>
+            </div>
+            <h3 className="section">Fundamentals</h3>
+            <p className="small muted">{String(s.fundamentals?.status ?? "—")}: {String(s.fundamentals?.reason ?? s.fundamentals?.block ?? "")}</p>
+            <h3 className="section">History</h3>
+            <ul className="why plain">{s.events?.map((e, i) => <li key={i}>{e.ts.slice(0, 16).replace("T", " ")} — {STATUS_LABEL[e.kind] ?? e.kind} {e.detail}</li>)}</ul>
+            {s.deliveries && s.deliveries.length > 0 && (
+              <ul className="why plain">{s.deliveries.map((d, i) => <li key={i}>Alert “{d.event}” via {d.channel}: {d.status}{d.error ? ` (${d.error})` : ""}</li>)}</ul>
+            )}
+            <h3 className="section">Audit fingerprints</h3>
+            <div className="mono muted">params {s.params_hash}<br />dataset {s.dataset_hash}<br />risk config {s.risk_config_hash}<br />code {s.code_version}</div>
           </details>
         </>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -100,17 +156,19 @@ export default function Signals({ openId, setOpenId }: { openId: string | null; 
   if (openId) return <SignalDetail id={openId} onClose={() => setOpenId(null)} />;
   return (
     <section className="stack">
-      <div className="row between">
-        <h2>Signals</h2>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status filter">
-          {STATUS_FILTERS.map((s) => <option key={s} value={s}>{s || "All statuses"}</option>)}
-        </select>
+      <PageHead title="Signals" lead="Trade ideas found by the scanner. Tap one to see the full reasoning." />
+      <div className="seg" role="group" aria-label="Filter signals">
+        {FILTERS.map(([v, label]) => (
+          <button key={v} aria-pressed={status === v} onClick={() => setStatus(v)}>{label}</button>
+        ))}
       </div>
       <ErrorLine error={error} />
+      {loading && !data && <p className="muted center">Loading…</p>}
       {data && data.length === 0 && (
-        <p className="muted">No signals {status ? `with status ${status}` : ""}. That is normal: most bars are NO_TRADE. See the Scanner for current reasons.</p>
+        <Empty icon="inbox" title={status === "ACTIVE" ? "No open signals right now" : "Nothing here yet"}>
+          That’s normal — most of the time no setup meets all the rules, and staying out is the right call. Check <b>Markets</b> to see why.
+        </Empty>
       )}
-      {loading && !data && <p className="muted">Loading…</p>}
       <div className="grid">{data?.map((s) => <SignalCard key={s.id} s={s} onOpen={setOpenId} />)}</div>
     </section>
   );
