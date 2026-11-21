@@ -73,9 +73,16 @@ async def run_and_store(s: Session, provider: MarketDataProvider, req: dict[str,
             raise ValueError(f"only {len(candles)} closed candles available; need >= 400")
         persist_candles(s, provider.name, req["symbol"], candles)
         spec, ppy = _spec(s, req["symbol"], req.get("product_spec"))
-        if req.get("research_override_unconfirmed"):
-            # explicit, audited opt-in to backtest with an unconfirmed spec (contract size defaults to 1)
+        notes: list[str] = []
+        if not spec.confirmed and (spec.product_type == "linear" or req.get("research_override_unconfirmed")):
+            # Research-only sizing for an unconfirmed product. R-multiples, win rate, profit factor and
+            # drawdown % do not depend on contract size, so the test stays meaningful; currency amounts are
+            # illustrative. Live alerts remain RISK_UNAVAILABLE until the operator confirms the spec.
             spec = replace(spec, confirmed=True, contract_size=spec.contract_size or 1.0, min_units=spec.min_units or 1e-6)
+            notes.append(
+                "Product details for this market are not confirmed yet, so the test assumes a contract size of 1. "
+                "Results in R, win rate, profit factor and drawdown % are unaffected; currency amounts are illustrative."
+            )
         adapter = build_adapter(spec)
         assert adapter is not None
         risk = load_risk_config(s)
@@ -131,6 +138,7 @@ async def run_and_store(s: Session, provider: MarketDataProvider, req: dict[str,
         run.equity = {"net": _downsample(res.equity), "gross": _downsample(res.equity_gross)}  # type: ignore[assignment]
         for t in res.trades:
             s.add(BacktestTrade(run_id=run.id, trade_no=t.trade_id, data=t.to_dict()))
+        run.report["notes"] = notes
         run.status = "DONE"
         run.report["elapsed_s"] = round(time.time() - t0, 2)
     except Exception as exc:

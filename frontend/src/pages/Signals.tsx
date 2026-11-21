@@ -63,7 +63,10 @@ export function SignalCard({ s, onOpen }: { s: Signal; onOpen: (id: string) => v
         {s.outcome_r !== null ? (
           <span className={`small ${s.outcome_r >= 0 ? "ok" : "bad"}`}><b>{s.outcome_r >= 0 ? "+" : ""}{fmtNum(s.outcome_r)} R</b> paper result</span>
         ) : (
-          <span className="small muted">{ALERT_LABEL[s.alert_level] ?? s.alert_level}</span>
+          <span className="small muted">
+            {ALERT_LABEL[s.alert_level] ?? s.alert_level}
+            {s.risk_status === "RISK_UNAVAILABLE" && " · product details needed"}
+          </span>
         )}
       </div>
     </article>

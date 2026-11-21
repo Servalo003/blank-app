@@ -149,7 +149,7 @@ export interface BacktestRun {
   created_at: string;
   summary: Partial<Metrics>;
   metrics?: { net: Metrics; gross: Metrics; exposure_pct: number; turnover: number; total_costs: number; ambiguous_bar_trades: number; assumptions: Record<string, string> };
-  report?: Record<string, unknown> & { eligibility_reasons?: string[]; benchmarks?: Record<string, Record<string, number>>; folds?: unknown[]; disclaimer?: string; chosen_params?: Record<string, unknown> };
+  report?: Record<string, unknown> & { notes?: string[]; eligibility_reasons?: string[]; benchmarks?: Record<string, Record<string, number>>; folds?: unknown[]; disclaimer?: string; chosen_params?: Record<string, unknown> };
   equity?: { net: [number, number][]; gross: [number, number][] };
   dataset_range?: Record<string, unknown>;
   trades?: Record<string, unknown>[];
