@@ -69,6 +69,7 @@ function RunDetail({ id, onClose }: { id: string; onClose: () => void }) {
         <>
           <PageHead title={strategyName(r.strategy)} lead={`${r.symbol} · ${r.timeframe} chart · ${timeAgo(r.created_at)}`} action={<ProvBadge p={r.provenance} />} />
           {r.provenance === "SIMULATED_DATA" && <div className="note warn"><b>Simulated data:</b> these results say nothing about real markets.</div>}
+          {r.report?.notes?.map((n, i) => <div key={i} className="note info">{n}</div>)}
           <Verdict r={r} />
           {r.report?.eligibility_reasons && (
             <div className="card">

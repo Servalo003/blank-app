@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     git_sha: str = "dev"
 
-    data_provider: Literal["simulator", "deriv"] = "simulator"
+    data_provider: Literal["simulator", "deriv"] = "deriv"  # live Deriv public market data
     simulator_seed: int = 7
 
     # Deriv. Public market data needs NO token. DERIV_API_TOKEN is accepted for

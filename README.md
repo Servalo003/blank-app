@@ -124,7 +124,7 @@ Every screen shows whether the data is live, delayed or simulated. The first tim
 
 ## Running it
 
-### Quick start (no Docker, simulated data)
+### Quick start (no Docker)
 
 ```bash
 cd backend && python3.12 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
@@ -136,7 +136,7 @@ cd ../frontend && npm ci && npm run dev      # http://localhost:5173 (proxies /a
 Without `APP_ACCESS_TOKEN`, development mode leaves the API open. Production refuses to start without a token of
 24 or more characters. In the app, enter the token under **Settings**.
 
-To use real Deriv data, set `DATA_PROVIDER=deriv`.
+The app uses **live Deriv data by default** (`DATA_PROVIDER=deriv`). It needs no Deriv account or token, only outbound access to `api.derivws.com`. For an offline demo, set `DATA_PROVIDER=simulator`; everything it produces is labelled as simulated.
 
 ### Docker Compose (Postgres, Redis, API, worker, web)
 
@@ -192,5 +192,6 @@ dependency audits and Docker builds.
 - No economic calendar ships with the app, and nothing is invented. Until you import one, FX symbols report `NO_DATA`.
 - Spread defaults are labelled assumptions. The public `tick` stream includes `bid`/`ask`, so data-driven spread estimates are a natural next step.
 - Backtests on the simulator say nothing about real markets. They exist to exercise the engine.
+- Until a market's product details are confirmed, Research tests on it assume a contract size of 1. Results in R, win rate, profit factor and drawdown % are unaffected; currency amounts are illustrative. The result page says so.
 - Paper outcomes use the signal reference price and do not model your real fills.
 - Docker images were not built in the development sandbox; CI builds them.
