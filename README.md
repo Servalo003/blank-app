@@ -95,16 +95,23 @@ The label means "passed a research screen", nothing more.
 - Paper alerts are `ACTIONABLE` only for live data **and** an eligible strategy. Everything else is
   `RESEARCH_ONLY`, which is off by default and enabled with `RESEARCH_ONLY_ALERTS=true`.
 
-**Product risk.** Seeded Deriv instruments start with `confirmed: false` product specs, so they report
-`RISK_UNAVAILABLE` until you enter verified values for the product you actually use:
+**Product risk (Deriv MT5).** Signals are sized as **Deriv MT5 CFDs**. The app bundles Deriv's published
+[MT5 trading specifications](https://deriv.com/trading-specifications) (`backend/app/products/deriv_mt5_specs.json`,
+retrieved 2026-11-22): contract size, minimum and maximum lot, minimum and typical spread, and swap. They're matched to Deriv
+API symbols by name, which covers 86 of the 95 active symbols; unmatched symbols get no suggestion rather than a guess.
 
-```bash
-curl -X PUT -H "Authorization: Bearer $APP_ACCESS_TOKEN" -H 'Content-Type: application/json' \
-  http://localhost:8080/api/instruments/R_100 -d '{
-    "product_spec": {"product_type": "multiplier", "multiplier": 100, "confirmed": true,
-                     "costs": {"spread_bps": 3.5, "slippage_atr": 0.05, "commission_bps": 0.5, "source": "my broker terms"}},
-    "periods_per_year": 365}'
-```
+Suggestions start unconfirmed. Tap **Use these MT5 specs** on a market, or **Use MT5 specs for all my markets** in
+Settings, after checking them against the **Specification** window in your MT5 terminal. Values can change and differ by
+account type. Until a market is confirmed, its risk is `RISK_UNAVAILABLE` and alerts stay research-only.
+
+Modelling notes:
+- The volume step is taken as the minimum lot, so sizes only ever round down.
+- Costs come from the spread (MT5 synthetics carry no commission).
+- Swap is shown but **not** included in tests.
+- MT5 prices are assumed to track the same index as Deriv's public data feed, which the app uses for charts, signals and
+  tests. Verify this in your terminal.
+
+You can still set a spec by hand with `PUT /api/instruments/<symbol>`.
 
 **Score.** The `score` field is an ordinal strength used for ranking. It is **not** a probability.
 
@@ -116,9 +123,11 @@ The app has five tabs:
 |---|---|
 | **Today** | Is the scanner running? How many ideas are open? A big **Scan now** button. Plus a short "How this app works" guide. |
 | **Signals** | Buy and sell ideas, filterable by status (Open, Target reached, Stopped out, Cancelled, Expired, Blocked). Tap an idea to see the price, stop and target, the reasons behind it, and its safety checks. The technical details are tucked away below. |
-| **Markets** | Your watchlist, with one line per market saying what the strategies see. Tap a market for its chart and each strategy's reading. |
-| **Research** | Test a strategy on past prices. A **Full test** produces a clear verdict, Passed or Not passed, and passing is what unlocks paper alerts for that market. |
-| **Settings** | The emergency stop, phone alerts, safety limits, product details for each market, system health, and the access token. |
+| **Markets** | Your watchlist, with one line per market saying what the strategies see. **Add market** searches every Deriv symbol, forex included. Tap a market for its chart, each strategy's reading, its MT5 contract, and the live spread on Deriv's feed. |
+| **Research** | **Test all** runs every strategy on every watched market over about 6 months, in the background. A single **Full test** produces a clear verdict, Passed or Not passed, and passing is what unlocks paper alerts for that market. |
+| **Settings** | Appearance (System, Dark or Light), the emergency stop, phone alerts, safety limits, MT5 contracts, economic-calendar CSV import, system health, and the access token. |
+
+The **Today** screen also has a paper-results card for the last 7 or 30 days. The look is a dark, trading-terminal style with a light theme; on desktop the tabs move to a left rail.
 
 Every screen shows whether the data is live, delayed or simulated. The first time you open the app it asks for the access token.
 
@@ -189,8 +198,8 @@ dependency audits and Docker builds.
 
 ## Known limitations and next steps
 
-- No economic calendar ships with the app, and nothing is invented. Until you import one, FX symbols report `NO_DATA`.
-- Spread defaults are labelled assumptions. The public `tick` stream includes `bid`/`ask`, so data-driven spread estimates are a natural next step.
+- No economic calendar ships with the app, and nothing is invented. Import one as CSV under **Settings → Economic calendar**. Until then, FX symbols report `NO_DATA`.
+- The live spread shown for each market comes from Deriv's public data feed, which may differ from your MT5 spread. Tests use the MT5 spread.
 - Backtests on the simulator say nothing about real markets. They exist to exercise the engine.
 - Until a market's product details are confirmed, Research tests on it assume a contract size of 1. Results in R, win rate, profit factor and drawdown % are unaffected; currency amounts are illustrative. The result page says so.
 - Paper outcomes use the signal reference price and do not model your real fills.

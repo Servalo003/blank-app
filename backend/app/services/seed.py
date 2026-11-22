@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Instrument, Watchlist, WatchlistItem
+from app.products.mt5 import suggest_spec
 from app.services import audit
 
 SIM_SPEC = {
@@ -85,7 +86,7 @@ def seed(s: Session) -> None:
                         market="synthetic_index",
                         submarket="random_index",
                         provider="deriv",
-                        product_spec=DERIV_UNCONFIRMED_SPEC,
+                        product_spec=suggest_spec(name) or DERIV_UNCONFIRMED_SPEC,
                         periods_per_year=365,
                     )
                 )

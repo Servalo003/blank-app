@@ -30,6 +30,10 @@ class MarketDataProvider(ABC):
         """Most recent streamed tick {epoch, quote, bid, ask} if available."""
         return None
 
+    def spread_stats(self, symbol: str) -> dict[str, Any] | None:
+        """Observed bid/ask spread from the streamed feed, if the provider has one."""
+        return None
+
     async def health(self) -> dict[str, Any]:
         return {"provider": self.name, "provenance": self.provenance.value}
 

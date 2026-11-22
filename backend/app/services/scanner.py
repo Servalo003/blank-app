@@ -30,7 +30,7 @@ from app.core.types import (
 from app.data.provider import DataUnavailable, MarketDataProvider
 from app.data.quality import normalize_candles
 from app.fundamentals import service as fundamentals
-from app.models import CandleRow, Instrument, ScanSnapshot, SignalEvent, SignalRow, StrategyEligibility, WatchlistItem
+from app.models import AppSetting, CandleRow, Instrument, ScanSnapshot, SignalEvent, SignalRow, StrategyEligibility, WatchlistItem
 from app.notifications.dispatcher import Dispatcher
 from app.products.adapter import build_adapter
 from app.risk.engine import AlertLevel, OpenPosition, RiskContext, RiskEngine
@@ -206,6 +206,17 @@ async def scan_item(
         log.warning("scan.data_unavailable", symbol=item.symbol, tf=item.timeframe, error=str(exc))
         return summary
     persist_candles(s, provider.name, item.symbol, candles[-50:])
+    try:  # live bid/ask stream for spread statistics (no-op for providers without one)
+        await provider.latest_quote(item.symbol)
+        stats = provider.spread_stats(item.symbol)
+        if stats:
+            srow = s.get(AppSetting, f"spread:{item.symbol}")
+            if srow is None:
+                s.add(AppSetting(key=f"spread:{item.symbol}", value=stats))
+            else:
+                srow.value = stats
+    except Exception as exc:
+        log.warning("scan.spread_stats_failed", symbol=item.symbol, error=str(exc))
     dq_d = asdict(dq)
     summary["data_quality"] = dq_d
 

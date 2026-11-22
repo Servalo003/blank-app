@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import {
+  AreaSeries,
   CandlestickSeries,
   ColorType,
   createChart,
@@ -10,6 +11,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import type { Signal } from "./api";
+import { useTheme } from "./theme";
 
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -18,10 +20,10 @@ function cssVar(name: string): string {
 function themeOptions() {
   return {
     layout: { background: { type: ColorType.Solid, color: cssVar("--surface") }, textColor: cssVar("--muted") },
-    grid: { vertLines: { visible: false }, horzLines: { color: cssVar("--border") } },
+    grid: { vertLines: { color: cssVar("--grid-line") }, horzLines: { color: cssVar("--grid-line") } },
     timeScale: { timeVisible: true, secondsVisible: false, borderColor: cssVar("--border") },
     rightPriceScale: { borderColor: cssVar("--border") },
-    crosshair: { mode: 0 },
+    crosshair: { mode: 0, vertLine: { color: cssVar("--faint"), labelBackgroundColor: cssVar("--surface-3") }, horzLine: { color: cssVar("--faint"), labelBackgroundColor: cssVar("--surface-3") } },
     autoSize: true,
   };
 }
@@ -38,6 +40,7 @@ export function CandleChart({
   label: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const { resolved } = useTheme();
   useEffect(() => {
     if (!ref.current || candles.length === 0) return;
     const chart = createChart(ref.current, themeOptions());
@@ -65,21 +68,25 @@ export function CandleChart({
     }
     chart.timeScale().fitContent();
     return () => chart.remove();
-  }, [candles, signals, selected]);
+  }, [candles, signals, selected, resolved]);
   return <div className="chart" ref={ref} role="img" aria-label={label} />;
 }
 
 export function EquityChart({ net, gross }: { net: [number, number][]; gross: [number, number][] }) {
   const ref = useRef<HTMLDivElement>(null);
+  const { resolved } = useTheme();
   useEffect(() => {
     if (!ref.current) return;
     const chart = createChart(ref.current, themeOptions());
     const g = chart.addSeries(LineSeries, { color: cssVar("--faint"), lineWidth: 1, title: "Before costs" });
-    const n = chart.addSeries(LineSeries, { color: cssVar("--accent"), lineWidth: 2, title: "After costs" });
+    const n = chart.addSeries(AreaSeries, {
+      lineColor: cssVar("--accent"), lineWidth: 2, title: "After costs",
+      topColor: `${cssVar("--accent")}55`, bottomColor: `${cssVar("--accent")}00`,
+    });
     g.setData(gross.map(([t, v]) => ({ time: t as UTCTimestamp, value: v })));
     n.setData(net.map(([t, v]) => ({ time: t as UTCTimestamp, value: v })));
     chart.timeScale().fitContent();
     return () => chart.remove();
-  }, [net, gross]);
+  }, [net, gross, resolved]);
   return <div className="chart" ref={ref} style={{ height: 240 }} role="img" aria-label="Paper balance over time, before and after costs" />;
 }

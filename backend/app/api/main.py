@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import (
     BacktestIn,
+    CsvIn,
     EconomicEventIn,
     InstrumentSpecIn,
     PushSubscriptionIn,
@@ -32,6 +33,7 @@ from app.db import Base, get_engine, get_session, session_scope
 from app.fundamentals import service as fundamentals
 from app.logging import configure_logging
 from app.models import (
+    AppSetting,
     AuditLog,
     BacktestRun,
     EconomicEvent,
@@ -43,14 +45,15 @@ from app.models import (
     Watchlist,
     WatchlistItem,
 )
+from app.products import mt5
 from app.products.adapter import ProductSpec, build_adapter
 from app.risk.engine import HARD_MAX_RISK_PCT
-from app.services import audit
+from app.services import audit, extras
 from app.services.backtests import run_and_store
 from app.services.runtime import Coordinator, get_provider
 from app.services.seed import seed
 from app.services.settings_store import load_risk_config, save_risk_config
-from app.strategies.registry import describe_strategies
+from app.strategies.registry import BASE_STRATEGIES, describe_strategies
 
 log = structlog.get_logger(__name__)
 DISCLAIMER = (
@@ -231,9 +234,45 @@ def instruments(s: Session = DB, _: str = Auth) -> list[dict[str, Any]]:
                 "periods_per_year": i.periods_per_year,
                 "adapter": adapter.describe() if adapter else None,
                 "fundamentals": fundamentals.assess(s, i.symbol, i.market, int(time.time())),
+                "mt5_available": mt5.find(i.display_name) is not None,
+                "observed_spread": _setting(s, f"spread:{i.symbol}"),
             }
         )
     return out
+
+
+def _setting(s: Session, key: str) -> Any:
+    row = s.get(AppSetting, key)
+    return row.value if row else None
+
+
+@app.get("/api/mt5/source")
+def mt5_source(_: str = Auth) -> dict[str, Any]:
+    return mt5.source()
+
+
+@app.post("/api/instruments/{symbol}/apply-mt5")
+def apply_mt5(symbol: str, s: Session = DB, actor: str = Auth) -> dict[str, Any]:
+    try:
+        return extras.apply_mt5(s, symbol, actor)
+    except KeyError as exc:
+        raise HTTPException(404, "instrument not found") from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/instruments/apply-mt5-all")
+def apply_mt5_all(s: Session = DB, actor: str = Auth) -> dict[str, Any]:
+    applied, skipped = [], []
+    for i in s.scalars(select(Instrument)):
+        if i.market == "simulated":
+            continue
+        try:
+            extras.apply_mt5(s, i.symbol, actor)
+            applied.append(i.symbol)
+        except ValueError:
+            skipped.append(i.symbol)
+    return {"applied": applied, "skipped": skipped}
 
 
 @app.put("/api/instruments/{symbol}")
@@ -316,18 +355,29 @@ def create_watchlist(body: WatchlistIn, s: Session = DB, actor: str = Auth) -> d
 
 
 @app.post("/api/watchlists/{wid}/items")
-def add_item(wid: int, body: WatchlistItemIn, s: Session = DB, actor: str = Auth) -> dict[str, Any]:
+async def add_item(wid: int, body: WatchlistItemIn, s: Session = DB, actor: str = Auth) -> dict[str, Any]:
     w = s.get(Watchlist, wid)
     if w is None:
         raise HTTPException(404, "watchlist not found")
     if len(w.items) >= 50:
         raise HTTPException(400, "watchlist limit is 50 items (bounded scanning)")
+    if any(i.symbol == body.symbol and i.timeframe == body.timeframe.value for i in w.items):
+        raise HTTPException(409, f"{body.symbol} {body.timeframe.value} is already on this watchlist")
+    try:
+        await extras.ensure_instrument(s, get_provider(), body.symbol)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except DataUnavailable as exc:
+        raise HTTPException(503, f"provider unavailable: {exc}") from exc
+    strategies = {k: v.model_dump() for k, v in body.strategies.items()} or {
+        k: {"enabled": True, "params": None} for k in BASE_STRATEGIES
+    }
     s.add(
         WatchlistItem(
             watchlist_id=wid,
             symbol=body.symbol,
             timeframe=body.timeframe.value,
-            strategies={k: v.model_dump() for k, v in body.strategies.items()},
+            strategies=strategies,
             enabled=body.enabled,
         )
     )
@@ -567,6 +617,34 @@ async def test_notification(_: str = Auth) -> dict[str, Any]:
         except Exception as exc:
             results[ch.name] = f"failed: {str(exc)[:200]}"
     return results
+
+
+@app.get("/api/performance")
+def get_performance(days: int = Query(7, ge=1, le=365), s: Session = DB, _: str = Auth) -> dict[str, Any]:
+    return extras.performance(s, days)
+
+
+@app.post("/api/events/csv")
+def import_events_csv(body: CsvIn, s: Session = DB, actor: str = Auth) -> dict[str, Any]:
+    try:
+        return extras.import_calendar_csv(s, body.csv, actor)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/evaluations/batch")
+def batch_status(_: str = Auth) -> dict[str, Any]:
+    return extras.batch_status()
+
+
+@app.post("/api/evaluations/batch")
+def batch_start(s: Session = DB, actor: str = Auth) -> dict[str, Any]:
+    try:
+        out = extras.start_batch(get_provider())
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    audit.record(s, "batch_evaluation.started", "batch", "", out, actor)
+    return out
 
 
 @app.post("/api/events")

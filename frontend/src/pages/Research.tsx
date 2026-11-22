@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, fmtNum, fmtTs, STRATEGIES, TIMEFRAMES, type BacktestRun, type Metrics } from "../api";
 import { EquityChart } from "../charts";
 import { Back, Empty, ErrorLine, Help, Icon, PageHead, ProvBadge, STRATEGY_HELP, strategyName, timeAgo, useApi } from "../common";
@@ -143,6 +143,74 @@ function RunDetail({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
+interface BatchResult { id?: string; symbol: string; timeframe: string; strategy: string; status: string; label?: string | null; error?: string | null; summary?: { trades?: number; expectancy_r?: number; profit_factor?: number; max_drawdown_pct?: number; net_return_pct?: number } }
+interface BatchState { state: string; total?: number; done?: number; current?: string; started_at?: number; finished_at?: number; results?: BatchResult[] }
+
+function BatchPanel({ onOpen, onDone }: { onOpen: (id: string) => void; onDone: () => void }) {
+  const { data, reload } = useApi<BatchState>("/api/evaluations/batch", 5000);
+  const [err, setErr] = useState<string | null>(null);
+  const running = data?.state === "running";
+  const pct = data?.total ? Math.round(((data.done ?? 0) / data.total) * 100) : 0;
+  const results = data?.results ?? [];
+  const passed = results.filter((r) => r.label === "ELIGIBLE_FOR_PAPER_ALERTS").length;
+  async function start() {
+    setErr(null);
+    try {
+      await api("/api/evaluations/batch", { method: "POST" });
+      reload();
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+  const finishedAt = data?.finished_at;
+  useEffect(() => {
+    if (finishedAt) onDone();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finishedAt]);
+  return (
+    <div className="card stack-sm">
+      <div className="row between">
+        <div>
+          <b>Test everything</b>
+          <div className="small muted">Every strategy on every watched market, about 6 months of history each.</div>
+        </div>
+        <button className="btn sm" onClick={start} disabled={running}><Icon name={running ? "refresh" : "layers"} className={running ? "spin" : undefined} /> {running ? "Running…" : "Test all"}</button>
+      </div>
+      {running && (
+        <>
+          <div className="bar"><i style={{ width: `${pct}%` }} /></div>
+          <div className="tiny muted">{data?.done}/{data?.total} done · now: {data?.current} · this can take 10–20 minutes; you can leave this screen</div>
+        </>
+      )}
+      {!running && results.length > 0 && (
+        <>
+          <div className="small">
+            Last run {data?.finished_at ? timeAgo(data.finished_at) : ""}: <b className={passed ? "ok" : ""}>{passed} of {results.length}</b> passed.
+            {passed === 0 && " No strategy cleared the bar on these markets, so alerts stay research-only. That is a useful, honest answer."}
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Strategy · market</th><th className="num">Trades</th><th className="num">R/trade</th><th>Result</th></tr></thead>
+              <tbody>
+                {results.map((r, i) => (
+                  <tr key={i} onClick={() => r.id && onOpen(r.id)} style={{ cursor: r.id ? "pointer" : undefined }}>
+                    <td style={{ whiteSpace: "normal" }}>{strategyName(r.strategy)}<div className="ticker tiny">{r.symbol} · {r.timeframe}</div></td>
+                    <td className="num">{r.summary?.trades ?? "—"}</td>
+                    <td className={`num ${(r.summary?.expectancy_r ?? 0) >= 0 ? "ok" : "bad"}`}>{fmtNum(r.summary?.expectancy_r ?? null, 2)}</td>
+                    <td>{r.status === "FAILED" ? <span className="pill short" title={r.error ?? ""}>Error</span> : r.label === "ELIGIBLE_FOR_PAPER_ALERTS" ? <span className="pill long">Passed</span> : <span className="pill">Not passed</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      {data?.state === "interrupted" && <p className="small warn-t" style={{ margin: 0 }}>The last batch was interrupted (server restarted). Run it again.</p>}
+      <ErrorLine error={err} />
+    </div>
+  );
+}
+
 export default function Research({ symbols }: { symbols: string[] }) {
   const runs = useApi<BacktestRun[]>("/api/backtests");
   const [open, setOpen] = useState<string | null>(null);
@@ -168,7 +236,9 @@ export default function Research({ symbols }: { symbols: string[] }) {
   if (open) return <RunDetail id={open} onClose={() => setOpen(null)} />;
   return (
     <section className="stack">
-      <PageHead title="Research" lead="Test a strategy on past prices before trusting its alerts." />
+      <PageHead title="Research" lead="Test strategies on past prices before trusting their alerts." />
+      <BatchPanel onOpen={setOpen} onDone={() => runs.reload()} />
+      <h3 className="section">Single test</h3>
       <div className="card stack">
         <div className="form-grid">
           <label className="field">Market

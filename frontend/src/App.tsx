@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { setToken, type Signal, type Status, type Watchlist } from "./api";
 import { Footer, Icon, ProvBadge, useApi } from "./common";
+import { useTheme, type ThemeMode } from "./theme";
 import Home from "./pages/Home";
 import Markets from "./pages/Markets";
 import Research from "./pages/Research";
@@ -22,10 +23,24 @@ function parseHash(): { tab: Tab; id: string | null } {
   return { tab: known ? (tab as Tab) : "home", id: id ?? null };
 }
 
+const NEXT_MODE: Record<ThemeMode, ThemeMode> = { system: "dark", dark: "light", light: "system" };
+const MODE_ICON: Record<ThemeMode, string> = { system: "monitor", dark: "moon", light: "sun" };
+
+export function ThemeButton() {
+  const { mode, setMode } = useTheme();
+  return (
+    <button className="iconbtn themebtn" onClick={() => setMode(NEXT_MODE[mode])} title={`Theme: ${mode} (tap to change)`} aria-label={`Theme: ${mode}. Change theme`}>
+      <Icon name={MODE_ICON[mode]} />
+      <span>{mode[0].toUpperCase() + mode.slice(1)}</span>
+    </button>
+  );
+}
+
 function Welcome({ onSaved }: { onSaved: () => void }) {
   const [tok, setTok] = useState("");
   return (
     <main className="stack" style={{ paddingTop: 48 }}>
+      <div className="row" style={{ justifyContent: "flex-end" }}><ThemeButton /></div>
       <div className="center">
         <img src="/icon.svg" alt="" width={64} height={64} style={{ borderRadius: 16 }} />
         <h1 className="page" style={{ marginTop: 12 }}>Deriv Signal Lab</h1>
@@ -53,7 +68,9 @@ export default function App() {
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
+  const [navKey, setNavKey] = useState(0);
   const go = (t: string, sid: string | null = null) => {
+    setNavKey((k) => k + 1); // tapping a tab always returns to that tab's main screen
     window.location.hash = sid ? `/${t}/${sid}` : `/${t}`;
   };
   const status = useApi<Status>("/api/status", 30000);
@@ -69,10 +86,11 @@ export default function App() {
   return (
     <>
       <header className="top">
-        <div className="brand"><img src="/icon.svg" alt="" /> Signal Lab</div>
+        <div className="brand"><img src="/icon.svg" alt="" /><div>Signal Lab<small>Deriv · research</small></div></div>
         <div className="spacer" />
         {status.data?.risk.kill_switch && <span className="pill short">Paused</span>}
         {status.data && <ProvBadge p={status.data.provenance} />}
+        <ThemeButton />
       </header>
       <nav className="tabs" aria-label="Main">
         {TABS.map((t) => (
@@ -83,7 +101,7 @@ export default function App() {
           </button>
         ))}
       </nav>
-      <main className={`stack ${tab === "signals" || tab === "research" ? "wide" : ""}`}>
+      <main key={navKey} className={`stack ${tab === "signals" || tab === "research" || tab === "markets" ? "wide" : ""}`}>
         {status.error && <p className="error">Can’t reach the server: {status.error}</p>}
         {tab === "home" && <Home status={status.data} goSignal={(sid) => go("signals", sid)} goTab={go} />}
         {tab === "signals" && <Signals openId={id} setOpenId={(sid) => go("signals", sid)} />}

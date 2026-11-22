@@ -62,6 +62,7 @@ class ProductSpec:
     contract_size: float | None = None
     min_units: float | None = None
     unit_step: float | None = None
+    max_units: float | None = None
     multiplier: float | None = None
     max_stake: float | None = None
     confirmed: bool = False  # operator verified the spec against the broker
@@ -75,6 +76,7 @@ class ProductSpec:
             contract_size=d.get("contract_size"),
             min_units=d.get("min_units"),
             unit_step=d.get("unit_step"),
+            max_units=d.get("max_units"),
             multiplier=d.get("multiplier"),
             max_stake=d.get("max_stake"),
             confirmed=bool(d.get("confirmed", False)),
@@ -146,6 +148,9 @@ class LinearAdapter(ProductAdapter):
         units = risk_budget / per_unit
         step = self.spec.unit_step or self.spec.min_units
         units = (units // step) * step if step else units
+        if self.spec.max_units and units > self.spec.max_units:
+            units = self.spec.max_units
+            notes.append(f"Size capped at broker volume limit {self.spec.max_units:g}")
         if units < self.spec.min_units:
             return RiskCalc(
                 False,

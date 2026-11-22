@@ -99,6 +99,7 @@ class DerivWSClient:
         self._runner: asyncio.Task[None] | None = None
         self._tick_subs: set[str] = set()
         self.last_ticks: dict[str, dict[str, Any]] = {}
+        self.spreads: dict[str, deque[tuple[float, float]]] = {}  # (ask - bid, mid) per streamed tick
         self.last_message_at: float | None = None
         self.reconnects = 0
         self.last_error: str | None = None
@@ -169,6 +170,9 @@ class DerivWSClient:
             tick = parse_tick(msg)
             if tick and tick.get("symbol"):
                 self.last_ticks[tick["symbol"]] = {**tick, "received_at": self.last_message_at}
+                bid, ask = tick.get("bid"), tick.get("ask")
+                if isinstance(bid, (int, float)) and isinstance(ask, (int, float)) and ask >= bid > 0:
+                    self.spreads.setdefault(tick["symbol"], deque(maxlen=600)).append((ask - bid, (ask + bid) / 2))
             rid = msg.get("req_id")
             if isinstance(rid, int) and rid in self._pending:
                 fut = self._pending.pop(rid)
