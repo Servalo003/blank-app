@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, getToken, setToken, type Status } from "../api";
-import { ErrorLine, Help, PageHead, ProvBadge, timeAgo, useApi } from "../common";
+import { ErrorLine, Help, Icon, PageHead, ProvBadge, timeAgo, useApi } from "../common";
+import { useTheme, type ThemeMode } from "../theme";
 
 function urlBase64ToUint8Array(base64: string): Uint8Array {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -18,6 +19,8 @@ const RISK_FIELDS: [string, string, string][] = [
 type Instrument = {
   symbol: string;
   market: string;
+  product_spec: Record<string, unknown> | null;
+  mt5_available: boolean;
   adapter: { product_type: string; confirmed: boolean } | null;
   fundamentals: { status: string };
 };
@@ -30,6 +33,8 @@ export default function Settings({ status, reloadStatus }: { status: Status | nu
   const audit = useApi<{ chain: { ok: boolean; entries: number } }>("/api/audit?limit=1");
   const instruments = useApi<Instrument[]>("/api/instruments");
   const risk = status?.risk ?? {};
+  const { mode, setMode } = useTheme();
+  const mt5src = useApi<{ source: string; retrieved_at: string }>("/api/mt5/source");
   const killed = Boolean(risk.kill_switch);
 
   const done = (m: string) => {
@@ -53,6 +58,25 @@ export default function Settings({ status, reloadStatus }: { status: Status | nu
       if (key === "kill_switch") await api(`/api/risk/kill-switch?engaged=${value}`, { method: "POST" });
       else await api("/api/risk/config", { method: "PUT", body: JSON.stringify({ changes: { [key]: value } }) });
       done("Saved.");
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+  async function applyMt5All() {
+    try {
+      const r = await api<{ applied: string[]; skipped: string[] }>("/api/instruments/apply-mt5-all", { method: "POST" });
+      instruments.reload();
+      done(`MT5 specs applied to ${r.applied.length} market(s)${r.skipped.length ? `; no MT5 match for ${r.skipped.join(", ")}` : ""}.`);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+  async function importCsv(file: File) {
+    try {
+      const text = await file.text();
+      const r = await api<{ imported: number }>("/api/events/csv", { method: "POST", body: JSON.stringify({ csv: text }) });
+      instruments.reload();
+      done(`Imported ${r.imported} calendar event(s).`);
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -86,6 +110,15 @@ export default function Settings({ status, reloadStatus }: { status: Status | nu
       <PageHead title="Settings" lead="Alerts, safety limits and connection." />
       {msg && <div className="note info">{msg}</div>}
       <ErrorLine error={err} />
+
+      <h3 className="section" style={{ marginTop: 0 }}>Appearance</h3>
+      <div className="seg" role="group" aria-label="Theme">
+        {(["system", "dark", "light"] as ThemeMode[]).map((m) => (
+          <button key={m} aria-pressed={mode === m} onClick={() => setMode(m)}>
+            <span className="row" style={{ justifyContent: "center", gap: 6 }}><Icon name={m === "system" ? "monitor" : m === "dark" ? "moon" : "sun"} className="ic14" /> {m[0].toUpperCase() + m.slice(1)}</span>
+          </button>
+        ))}
+      </div>
 
       {/* ---- emergency stop ---- */}
       <div className={`card hero`}>
@@ -137,20 +170,48 @@ export default function Settings({ status, reloadStatus }: { status: Status | nu
         </label>
       </div>
 
-      {/* ---- markets ---- */}
-      <h3 className="section">Markets &amp; products</h3>
+      {/* ---- markets / MT5 ---- */}
+      <h3 className="section">MT5 contracts</h3>
+      <div className="card stack-sm">
+        <p className="small muted" style={{ margin: 0 }}>
+          Signals are sized as Deriv MT5 CFDs. Specs come from Deriv’s published trading specifications
+          {mt5src.data && <> (<a href={mt5src.data.source} target="_blank" rel="noreferrer">source</a>, {mt5src.data.retrieved_at})</>}.
+          Confirm them against your MT5 terminal’s <b>Specification</b> window. Until a market is confirmed, its risk can’t be calculated and alerts stay research-only.
+        </p>
+        <button className="btn" onClick={applyMt5All}>Use MT5 specs for all my markets</button>
+      </div>
       <div className="list">
-        {instruments.data?.map((i) => (
+        {instruments.data?.filter((i) => i.market !== "simulated").map((i) => (
           <div key={i.symbol} className="row between">
             <div>
               <b>{i.symbol}</b>
-              <div className="small muted">{i.adapter ? i.adapter.product_type : "no product set"} · fundamentals {i.fundamentals.status.toLowerCase().replace(/_/g, " ")}</div>
+              <div className="small muted">
+                {i.product_spec && (i.product_spec as Record<string, unknown>).platform === "mt5" ? `MT5 · ${String((i.product_spec as Record<string, unknown>).mt5_name)}` : i.mt5_available ? "MT5 match available" : "no MT5 match"} · fundamentals {i.fundamentals.status.toLowerCase().replace(/_/g, " ")}
+              </div>
             </div>
-            {i.adapter?.confirmed ? <span className="pill long">Ready</span> : <span className="pill warn">Needs product details</span>}
+            {i.adapter?.confirmed ? <span className="pill long">Ready</span> : <span className="pill warn">Not confirmed</span>}
           </div>
         ))}
       </div>
-      <p className="tiny faint" style={{ margin: 0 }}>“Needs product details” means contract size and fees haven’t been confirmed, so risk can’t be calculated and alerts stay research-only. See the README to set them.</p>
+
+      {/* ---- calendar ---- */}
+      <h3 className="section">Economic calendar</h3>
+      <div className="card stack-sm">
+        <p className="small muted" style={{ margin: 0 }}>
+          For forex and commodity markets: import a CSV of scheduled events. New ideas are blocked within 30 minutes of a <b>high</b>-impact event for that currency.
+          Derived indices have no economic news, so this doesn’t apply to them.
+        </p>
+        <details>
+          <summary>CSV format</summary>
+          <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: "6px 0 0" }}>{`currency,title,impact,scheduled_at,known_at,source
+USD,Nonfarm Payrolls,high,2026-12-04T13:30:00Z,2026-11-20T00:00:00Z,my-calendar`}</pre>
+          <p className="tiny faint">impact: low / medium / high. known_at = when you first knew about the event (keeps tests honest). Times in UTC.</p>
+        </details>
+        <label className="btn ghost" style={{ cursor: "pointer" }}>
+          <Icon name="upload" /> Import CSV
+          <input type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={(e) => e.target.files?.[0] && importCsv(e.target.files[0])} />
+        </label>
+      </div>
 
       {/* ---- system ---- */}
       <h3 className="section">System</h3>

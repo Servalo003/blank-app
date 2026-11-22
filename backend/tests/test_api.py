@@ -166,3 +166,25 @@ def test_lifecycle_invalidation_stop_target() -> None:
         assert out[0][0] == "TARGET_HIT" and s3.outcome_r == pytest.approx(2.0)
     finally:
         sc.audit.record = orig  # type: ignore[assignment]
+
+
+def test_add_market_performance_calendar_and_batch(client: TestClient) -> None:
+    wl = client.get("/api/watchlists").json()[0]
+    r = client.post(f"/api/watchlists/{wl['id']}/items", json={"symbol": "SIM_TREND", "timeframe": "1h"})
+    assert r.status_code == 200, r.text
+    assert any(i["symbol"] == "SIM_TREND" and i["timeframe"] == "1h" for i in r.json()["items"])
+    assert client.post(f"/api/watchlists/{wl['id']}/items", json={"symbol": "SIM_TREND", "timeframe": "1h"}).status_code == 409
+    assert client.post(f"/api/watchlists/{wl['id']}/items", json={"symbol": "NOPE_XX", "timeframe": "1h"}).status_code == 400
+
+    perf = client.get("/api/performance?days=7").json()
+    assert perf["overall"]["closed"] >= 0 and "by_strategy" in perf
+
+    csv_ok = (
+        "currency,title,impact,scheduled_at,known_at,source\n"
+        "USD,Nonfarm Payrolls,high,2026-12-04T13:30:00Z,2026-11-20T00:00:00Z,test\n"
+    )
+    assert client.post("/api/events/csv", json={"csv": csv_ok}).json() == {"imported": 1}
+    bad = client.post("/api/events/csv", json={"csv": "currency,title\nUSD,x\n"})
+    assert bad.status_code == 400 and "missing columns" in bad.json()["detail"]
+
+    assert client.get("/api/evaluations/batch").json()["state"] in ("idle", "finished", "interrupted")

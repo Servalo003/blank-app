@@ -87,6 +87,22 @@ class DerivProvider(MarketDataProvider):
         await self.client.subscribe_ticks(symbol)
         return self.client.last_ticks.get(symbol)
 
+    def spread_stats(self, symbol: str) -> dict[str, Any] | None:
+        samples = self.client.spreads.get(symbol)
+        if not samples or len(samples) < 20:
+            return None
+        spreads = sorted(sp for sp, _ in samples)
+        mids = [m for _, m in samples]
+        median = spreads[len(spreads) // 2]
+        mid = sum(mids) / len(mids)
+        return {
+            "median_spread": median,
+            "median_spread_bps": median / mid * 1e4 if mid else None,
+            "p90_spread": spreads[int(len(spreads) * 0.9) - 1],
+            "samples": len(spreads),
+            "feed": "Deriv public market-data feed (may differ from your MT5 spread)",
+        }
+
     async def health(self) -> dict[str, Any]:
         last = self.client.last_message_at
         return {

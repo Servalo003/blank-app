@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type Signal, type Snapshot, type Status } from "../api";
-import { Empty, ErrorLine, Icon, PROV_LABEL, ProvBadge, timeAgo, useApi } from "../common";
+import { Empty, ErrorLine, Icon, PROV_LABEL, ProvBadge, fmtR, strategyName, timeAgo, useApi } from "../common";
 import { SignalCard } from "./Signals";
 
 function parseJson<T>(s: string | null): T | null {
@@ -10,6 +10,45 @@ function parseJson<T>(s: string | null): T | null {
   } catch {
     return null;
   }
+}
+
+interface Agg { closed: number; wins: number; total_r: number; avg_r: number | null }
+interface Perf { days: number; overall: Agg; paper_alerts: Agg; by_strategy: Record<string, Agg>; note: string }
+
+function PerformanceCard() {
+  const [days, setDays] = useState(7);
+  const { data } = useApi<Perf>(`/api/performance?days=${days}`, 120000);
+  const o = data?.overall;
+  return (
+    <div className="card stack-sm">
+      <div className="row between">
+        <b>Paper results</b>
+        <div className="seg" role="group" aria-label="Period" style={{ padding: 2 }}>
+          {[7, 30].map((d) => <button key={d} aria-pressed={days === d} onClick={() => setDays(d)} style={{ padding: "4px 10px" }}>{d}d</button>)}
+        </div>
+      </div>
+      {!o || o.closed === 0 ? (
+        <p className="small muted" style={{ margin: 0 }}>No ideas closed in the last {days} days yet. Results appear here once ideas hit their stop, target or expiry.</p>
+      ) : (
+        <>
+          <div className="kv-grid">
+            <div><span>Closed</span><b>{o.closed}</b></div>
+            <div><span>Wins</span><b>{o.wins}/{o.closed}</b></div>
+            <div><span>Total</span><b className={o.total_r >= 0 ? "ok" : "bad"}>{fmtR(o.total_r)}</b></div>
+            <div><span>Per idea</span><b className={(o.avg_r ?? 0) >= 0 ? "ok" : "bad"}>{fmtR(o.avg_r)}</b></div>
+          </div>
+          <table className="kv">
+            <tbody>
+              {Object.entries(data!.by_strategy).map(([k, a]) => (
+                <tr key={k}><td>{strategyName(k)}</td><td className="num">{a.wins}/{a.closed}</td><td className={`num ${a.total_r >= 0 ? "ok" : "bad"}`}>{fmtR(a.total_r)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="tiny faint" style={{ margin: 0 }}>{data!.note} R = amount risked.</p>
+        </>
+      )}
+    </div>
+  );
 }
 
 function SystemCard({ status }: { status: Status }) {
@@ -91,8 +130,10 @@ export default function Home({ status, goSignal, goTab }: { status: Status | nul
       </button>
       {msg && <p className="small muted center" style={{ margin: "6px 0 0" }}>{msg}</p>}
 
+      <PerformanceCard />
+
       <div className="row between">
-        <h3 className="section" style={{ margin: 0 }}>Open signals</h3>
+        <h3 className="section" style={{ margin: 0, flex: 1 }}>Open signals</h3>
         <button className="btn link" onClick={() => goTab("signals")}>See all</button>
       </div>
       <ErrorLine error={active.error} />

@@ -77,3 +77,7 @@ class EconomicEventIn(BaseModel):
     actual: str | None = None
     forecast: str | None = None
     previous: str | None = None
+
+
+class CsvIn(BaseModel):
+    csv: str = Field(max_length=2_000_000)

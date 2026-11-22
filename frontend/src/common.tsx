@@ -53,6 +53,15 @@ const PATHS: Record<string, ReactNode> = {
   chevron: <path d="m9 18 6-6-6-6" />,
   inbox: <><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /></>,
   play: <path d="M7 4v16l13-8z" />,
+  sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>,
+  moon: <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />,
+  monitor: <><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></>,
+  plus: <path d="M12 5v14M5 12h14" />,
+  trash: <><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" /></>,
+  upload: <><path d="M12 15V3" /><path d="m7 8 5-5 5 5" /><path d="M5 15v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" /></>,
+  layers: <><path d="m12 2 10 5-10 5L2 7z" /><path d="m2 17 10 5 10-5" /><path d="m2 12 10 5 10-5" /></>,
+  search: <><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></>,
+  x: <path d="M18 6 6 18M6 6l12 12" />,
 };
 
 export function Icon({ name, className }: { name: keyof typeof PATHS | string; className?: string }) {
@@ -117,6 +126,9 @@ export const VOL_LABEL: Record<string, string> = {
   UNKNOWN: "volatility unknown",
   None: "volatility unknown",
 };
+
+export const fmtR = (v: number | null | undefined) =>
+  v === null || v === undefined || Number.isNaN(v) ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)} R`;
 
 export const strategyName = (s: string) => STRATEGY_LABEL[s] ?? s;
 
