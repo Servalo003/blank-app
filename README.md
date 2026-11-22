@@ -147,6 +147,16 @@ Without `APP_ACCESS_TOKEN`, development mode leaves the API open. Production ref
 
 The app uses **live Deriv data by default** (`DATA_PROVIDER=deriv`). It needs no Deriv account or token, only outbound access to `api.derivws.com`. For an offline demo, set `DATA_PROVIDER=simulator`; everything it produces is labelled as simulated.
 
+### Free hosting (Oracle Cloud Always Free)
+
+Step-by-step guide: **[docs/DEPLOY_ORACLE.md](docs/DEPLOY_ORACLE.md)**. On a fresh Ubuntu VM, a single command
+installs Docker, opens the firewall, creates secrets and Web Push keys, starts everything behind automatic HTTPS
+(Caddy) and schedules nightly backups:
+
+```bash
+sudo deploy/setup-oracle.sh your-name.duckdns.org
+```
+
 ### Docker Compose (Postgres, Redis, API, worker, web)
 
 ```bash
